@@ -1,0 +1,10 @@
+.env
+__pycache__/
+*.pyc
+.tmp/
+models/
+.claude/settings.local.json
+
+# Notas pessoais / cache de outras ferramentas, não fazem parte do app
+GUIA-Vanguard-TPM-IOMMU-HVCI.md
+memory/
