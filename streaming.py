@@ -83,7 +83,9 @@ class StreamingSession:
             except Exception:
                 pass
             try:
-                self._ws.close()
+                # timeout=0: não fica até 3s esperando o "close" do servidor
+                # (isso travava a thread da UI ao encerrar).
+                self._ws.close(timeout=0)
             except Exception:
                 pass
             self._ws = None

@@ -74,7 +74,7 @@ AUTO_PASTE = True
 UI_WIDTH = 320
 UI_HEIGHT = 90
 UI_MARGIN_BOTTOM = 80        # distância do rodapé da tela (px)
-UI_FADE_OUT_MS = 1200        # quanto tempo o "✅ Pronto" fica antes de sumir
+UI_FADE_OUT_MS = 0           # ms que o texto final fica na tela (0 = some na hora)
 
 # Paleta dark cyberpunk (neutra, sem tom roxo) — ciano/teal com alerta em magenta.
 COLOR_BG = "#0a0f0f"

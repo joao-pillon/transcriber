@@ -40,7 +40,6 @@ class StreamingApp:
         self._active = False
         self._lock = threading.Lock()
         self._final_acc = ""   # tudo que já foi colado (p/ o "done")
-        self._finish_timer: threading.Timer | None = None
 
         self._session = StreamingSession(
             on_delta=self._on_delta,
@@ -53,10 +52,6 @@ class StreamingApp:
     def on_toggle(self):
         with self._lock:
             if not self._active:
-                # "done" pendente da gravação anterior não pode fechar esta.
-                if self._finish_timer is not None:
-                    self._finish_timer.cancel()
-                    self._finish_timer = None
                 self._active = True
                 self._final_acc = ""
                 try:
@@ -69,11 +64,9 @@ class StreamingApp:
                 self.popup.show_recording.emit()
             else:
                 self._active = False
-                self.popup.show_working.emit()
                 self._session.stop()
-                # dá um instante para o último "completed" chegar
-                self._finish_timer = threading.Timer(0.6, self._finish)
-                self._finish_timer.start()
+                # sem espera: o WS já fechou, nada mais chega depois do stop()
+                self.popup.show_done.emit(self._final_acc.strip())
 
     def _on_delta(self, text: str):
         # texto parcial acumulado: só mostra ao vivo (ainda não cola)
@@ -87,14 +80,6 @@ class StreamingApp:
         deliver(sep + text)
         self._final_acc += sep + text
         self.popup.update_text.emit(self._final_acc)
-
-    def _finish(self):
-        with self._lock:
-            if self._active:  # nova gravação começou nesse meio-tempo
-                return
-            self._finish_timer = None
-            text = self._final_acc.strip()
-        self.popup.show_done.emit(text)
 
 
 class FileApp:
