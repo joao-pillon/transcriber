@@ -17,11 +17,12 @@ pip install -r requirements.txt
    ```
    OPENAI_API_KEY=sk-...
    ```
-2. Descubra o índice do seu microfone (varia por máquina/driver):
+2. Descubra qual é o seu microfone:
    ```powershell
    python testar_mic.py
    ```
-   Anote o índice que captou áudio e ajuste `INPUT_DEVICE` em `config.py`.
+   Ponha um trecho do nome do mic que captou áudio em `INPUT_DEVICE_NAME`
+   (`config.py`). Nome, não índice: os índices mudam quando você pluga algo.
 
 ## Usar
 
@@ -35,10 +36,10 @@ python main.py
 
 `Ctrl+C` no terminal para sair.
 
-Pra não precisar abrir o terminal toda vez, crie um atalho para
-`pythonw.exe main.py` na pasta Startup do Windows
-(`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`) — isso é por
-máquina, não vem pelo git.
+Pra iniciar com o Windows, crie uma Scheduled Task "ao fazer logon" que rode
+`pythonw.exe main.py` (pasta de trabalho = a do projeto). Evite a pasta Startup:
+ela fica atrás da fila lenta de apps do Run e pode demorar minutos. Isso é por
+máquina, não vem pelo git. Sob `pythonw` os erros vão para `.tmp/transcriber.log`.
 
 ## Ajustes (config.py)
 
@@ -49,7 +50,7 @@ máquina, não vem pelo git.
 | Outro atalho | `HOTKEY = "<ctrl>+<alt>+d"` |
 | Fixar idioma (modo local) | `WHISPER_LANGUAGE = "pt"` |
 | Só copiar (sem colar) | `AUTO_PASTE = False` |
-| Outro microfone | `INPUT_DEVICE = <índice>` (veja com `python testar_mic.py`) |
+| Outro microfone | `INPUT_DEVICE_NAME = "trecho do nome"` (veja com `python testar_mic.py`) |
 
 ## Notas
 
@@ -58,5 +59,5 @@ máquina, não vem pelo git.
   que bloqueiam hooks de teclado de outros processos.
 - Modo local (`TRANSCRIBE_MODE = "local"`): sem GPU NVIDIA, roda em CPU.
   `medium` é preciso porém lento (~6-12s/frase); `small` é quase instantâneo.
-- `INPUT_DEVICE` é específico de cada máquina — sempre rode `testar_mic.py`
+- `INPUT_DEVICE_NAME` é específico de cada máquina — sempre rode `testar_mic.py`
   depois de clonar em um computador novo.

@@ -8,8 +8,19 @@ Modos (config.py):
   - USE_STREAMING=False -> grava tudo, depois transcreve (arquivo)
 """
 
+import ctypes
+import os
 import sys
 import threading
+
+# Sob pythonw.exe (início com o Windows) não há console: sem isso qualquer erro
+# de boot some em silêncio. Redireciona para um log, ANTES dos imports pesados.
+if sys.stdout is None or sys.stderr is None:
+    _log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".tmp")
+    os.makedirs(_log_dir, exist_ok=True)
+    sys.stdout = sys.stderr = open(
+        os.path.join(_log_dir, "transcriber.log"), "a", buffering=1, encoding="utf-8"
+    )
 
 from PySide6.QtWidgets import QApplication
 
@@ -29,6 +40,7 @@ class StreamingApp:
         self._active = False
         self._lock = threading.Lock()
         self._final_acc = ""   # tudo que já foi colado (p/ o "done")
+        self._finish_timer: threading.Timer | None = None
 
         self._session = StreamingSession(
             on_delta=self._on_delta,
@@ -41,6 +53,10 @@ class StreamingApp:
     def on_toggle(self):
         with self._lock:
             if not self._active:
+                # "done" pendente da gravação anterior não pode fechar esta.
+                if self._finish_timer is not None:
+                    self._finish_timer.cancel()
+                    self._finish_timer = None
                 self._active = True
                 self._final_acc = ""
                 try:
@@ -56,7 +72,8 @@ class StreamingApp:
                 self.popup.show_working.emit()
                 self._session.stop()
                 # dá um instante para o último "completed" chegar
-                threading.Timer(0.6, self._finish).start()
+                self._finish_timer = threading.Timer(0.6, self._finish)
+                self._finish_timer.start()
 
     def _on_delta(self, text: str):
         # texto parcial acumulado: só mostra ao vivo (ainda não cola)
@@ -72,7 +89,12 @@ class StreamingApp:
         self.popup.update_text.emit(self._final_acc)
 
     def _finish(self):
-        self.popup.show_done.emit(self._final_acc.strip())
+        with self._lock:
+            if self._active:  # nova gravação começou nesse meio-tempo
+                return
+            self._finish_timer = None
+            text = self._final_acc.strip()
+        self.popup.show_done.emit(text)
 
 
 class FileApp:
@@ -102,7 +124,8 @@ class FileApp:
                     self.recorder.start()
                 except Exception as e:
                     self._recording = False
-                    print(f"[ERRO] microfone (INPUT_DEVICE={config.INPUT_DEVICE}): {e}")
+                    print(f"[ERRO] microfone (INPUT_DEVICE_NAME={config.INPUT_DEVICE_NAME!r}, "
+                          f"INPUT_DEVICE={config.INPUT_DEVICE}): {e}")
                     self.popup.show_error.emit("Mic inválido — veja o terminal")
                     return
                 self.popup.show_recording.emit()
@@ -119,7 +142,17 @@ class FileApp:
         self.popup.show_done.emit(text)
 
 
+def _already_running() -> bool:
+    """Mutex nomeado: uma segunda instância sairia no conflito do atalho."""
+    ctypes.windll.kernel32.CreateMutexW(None, False, "Local\\Transcriber-SingleInstance")
+    return ctypes.windll.kernel32.GetLastError() == 183  # ERROR_ALREADY_EXISTS
+
+
 def main():
+    if _already_running():
+        print("Transcriber já está rodando — saindo.")
+        return
+
     qt_app = QApplication(sys.argv)
     qt_app.setQuitOnLastWindowClosed(False)
 

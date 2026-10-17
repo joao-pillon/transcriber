@@ -23,6 +23,7 @@ import sounddevice as sd
 import websocket  # websocket-client
 
 import config
+from mic import describe, resolve_input_device
 
 # Para transcrição, a API Realtime usa este endpoint.
 WS_URL = "wss://api.openai.com/v1/realtime?intent=transcription"
@@ -42,6 +43,8 @@ class StreamingSession:
         self._running = False
         self._ws_thread: threading.Thread | None = None
         self._connected = threading.Event()
+        # Serializa abrir (thread do WS) x fechar (atalho) o mic.
+        self._mic_lock = threading.Lock()
 
         # Texto acumulado da fala atual (deltas vão somando aqui).
         self._current_text = ""
@@ -64,14 +67,15 @@ class StreamingSession:
         self._ws_thread.start()
 
     def stop(self):
-        self._running = False
-        if self._stream is not None:
-            try:
-                self._stream.stop()
-                self._stream.close()
-            except Exception:
-                pass
-            self._stream = None
+        with self._mic_lock:
+            self._running = False
+            if self._stream is not None:
+                try:
+                    self._stream.stop()
+                    self._stream.close()
+                except Exception:
+                    pass
+                self._stream = None
         if self._ws is not None:
             try:
                 # Pede para finalizar o que ainda estiver no buffer.
@@ -86,6 +90,11 @@ class StreamingSession:
 
     # ─── WebSocket callbacks ─────────────────────────────────────────────
     def _on_open(self, ws):
+        # F9 duplo rápido: o stop() chegou antes de conectar. Sem isso o mic
+        # abria aqui e ficava aberto para sempre (ninguém mais o fecharia).
+        if ws is not self._ws or not self._running:
+            ws.close()
+            return
         # Configura a sessão de transcrição.
         ws.send(json.dumps({
             "type": "session.update",
@@ -106,7 +115,9 @@ class StreamingSession:
             },
         }))
         self._connected.set()
-        self._open_mic()
+        with self._mic_lock:
+            if ws is self._ws and self._running:
+                self._open_mic()
 
     def _on_message(self, ws, message):
         try:
@@ -152,11 +163,13 @@ class StreamingSession:
             except Exception:
                 pass
 
+        device = resolve_input_device()
+        print(f"[mic] gravando de {describe(device)}")
         self._stream = sd.InputStream(
             samplerate=STREAM_RATE,
             channels=1,
             dtype="float32",
-            device=config.INPUT_DEVICE,
+            device=device,
             blocksize=int(STREAM_RATE * 0.1),  # blocos de 100ms
             callback=callback,
         )

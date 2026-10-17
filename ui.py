@@ -1,9 +1,11 @@
-"""Pílula flutuante glass — UI dark minimalista com waveform ao vivo.
+"""Pílula flutuante glass — UI dark cyberpunk com waveform ao vivo.
 
 A UI vive na thread principal. Outras threads falam com ela por sinais Qt
-(thread-safe). Visual: glassmorphism dark, cantos bem arredondados, sombra
-suave, barras de áudio animadas e texto que cresce durante o streaming.
+(thread-safe). Visual: glassmorphism dark neutro, cantos bem arredondados,
+sombra suave, barras de áudio animadas e texto que cresce durante o streaming.
 """
+
+import math
 
 from PySide6.QtCore import (
     Qt, QTimer, Signal, QPropertyAnimation, QVariantAnimation, QEasingCurve,
@@ -17,9 +19,18 @@ from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QApplication
 import config
 
 
+def _lerp_color(c1: QColor, c2: QColor, t: float) -> QColor:
+    t = max(0.0, min(1.0, t))
+    return QColor(
+        int(c1.red() + (c2.red() - c1.red()) * t),
+        int(c1.green() + (c2.green() - c1.green()) * t),
+        int(c1.blue() + (c2.blue() - c1.blue()) * t),
+    )
+
+
 class Waveform(QWidget):
-    """Conjunto de barrinhas que pulsam com o nível do áudio (ou um ícone
-    de estado — check/aviso — desenhado no lugar quando inativo)."""
+    """Conjunto de barrinhas que pulsam com o nível do áudio — ou um ícone
+    de aviso quando dá erro."""
 
     def __init__(self, n_bars=5):
         super().__init__()
@@ -30,7 +41,7 @@ class Waveform(QWidget):
         self._phase = 0
         self._color = QColor(config.COLOR_RECORDING)
         self._active = False
-        self._symbol: str | None = None   # None | "check" | "warning"
+        self._symbol: str | None = None   # None | "warning"
 
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
@@ -52,7 +63,6 @@ class Waveform(QWidget):
 
     def _tick(self):
         self._phase += 1
-        import math
         for i in range(self._n):
             if self._active:
                 # onda suave modulada pelo nível atual
@@ -107,13 +117,7 @@ class Waveform(QWidget):
         p.setPen(pen)
         p.setBrush(Qt.NoBrush)
 
-        if self._symbol == "check":
-            path = QPainterPath()
-            path.moveTo(cx - 8, cy + 1)
-            path.lineTo(cx - 2, cy + 7)
-            path.lineTo(cx + 9, cy - 7)
-            p.drawPath(path)
-        elif self._symbol == "warning":
+        if self._symbol == "warning":
             tri = QPainterPath()
             tri.moveTo(cx, cy - 10)
             tri.lineTo(cx - 10, cy + 8)
@@ -158,8 +162,8 @@ class Popup(QWidget):
         # margem extra ao redor p/ a sombra desenhada não ser cortada
         self._pad = 22
         self._radius = 22
-        self._glass = QColor(20, 22, 34, 215)   # dark translúcido (alpha = glass)
-        self._border = QColor(255, 255, 255, 30)
+        self._glass = QColor(9, 12, 12, 218)    # dark neutro translúcido (sem tom roxo)
+        self._border = QColor(255, 255, 255, 26)
         self._accent = QColor(config.COLOR_RECORDING)
 
         # Tamanho FIXO da janela: evita redimensionar a janela layered a cada
@@ -185,9 +189,27 @@ class Popup(QWidget):
         self._label.setWordWrap(False)
         lay.addWidget(self._label, 1)
 
-        self._opacity_anim: QPropertyAnimation | None = None
+        # Uma animação de opacidade e um timer de sumir REUSADOS: assim um fade-in
+        # novo cancela o fade-out pendente da gravação anterior (senão o popup
+        # sumia no meio de uma gravação iniciada logo após outra).
+        self._fading_out = False
+        self._opacity_anim = QPropertyAnimation(self, b"windowOpacity", self)
+        self._opacity_anim.finished.connect(self._on_fade_finished)
+        self._hide_timer = QTimer(self)
+        self._hide_timer.setSingleShot(True)
+        self._hide_timer.timeout.connect(self._start_fade_out)
         self._accent_anim: QVariantAnimation | None = None
         self._level = 0.0
+
+        # oscilação contínua ciano↔teal enquanto "ativo" (ouvindo/finalizando) —
+        # dá a sensação de gradiente vivo em vez de cor parada.
+        self._osc_a = QColor("#00eaff")
+        self._osc_b = QColor("#00c2a8")
+        self._osc_phase = 0.0
+        self._oscillating = False
+        self._osc_timer = QTimer(self)
+        self._osc_timer.timeout.connect(self._tick_oscillation)
+        self._osc_timer.start(45)
 
     # fundo glass desenhado à mão: glow colorido + sombra + cartão + borda + accent.
     def paintEvent(self, _):
@@ -252,13 +274,42 @@ class Popup(QWidget):
         y = screen.height() - self.height() - config.UI_MARGIN_BOTTOM + self._pad
         self.move(x, y)
 
-    def _set_accent(self, color: str):
+    def _enter_active(self):
+        """Liga a oscilação contínua ciano↔teal (estado "vivo": ouvindo/finalizando)."""
+        # crossfade p/ verde/vermelho ainda rodando brigaria com a oscilação
+        self._stop_accent_anim()
+        self._oscillating = True
+
+    def _stop_accent_anim(self):
+        if self._accent_anim is None:
+            return
+        try:
+            self._accent_anim.stop()
+        except RuntimeError:
+            pass  # já terminou e foi deletada (DeleteWhenStopped)
+        self._accent_anim = None
+
+    def _tick_oscillation(self):
+        if not self._oscillating:
+            return
+        self._osc_phase += 0.045
+        t = (math.sin(self._osc_phase) + 1) / 2
+        c = _lerp_color(self._osc_a, self._osc_b, t)
+        self._accent = c
+        self._wave.set_color(c)
+        self.update()
+
+    def _set_static_accent(self, color: str):
+        """Para a oscilação e faz um crossfade suave até uma cor fixa
+        (usado nos estados terminais: pronto / erro)."""
+        self._oscillating = False
+        self._stop_accent_anim()
         target = QColor(color)
         if target == self._accent:
             self._wave.set_color(target)
             return
         anim = QVariantAnimation(self)
-        anim.setDuration(220)
+        anim.setDuration(260)
         anim.setStartValue(self._accent)
         anim.setEndValue(target)
         anim.setEasingCurve(QEasingCurve.OutCubic)
@@ -286,32 +337,39 @@ class Popup(QWidget):
 
     # ─── Animações de entrada/saída ──────────────────────────────────────
     def _fade_in(self):
-        self.setWindowOpacity(0.0)
-        self.show()
-        anim = QPropertyAnimation(self, b"windowOpacity", self)
-        anim.setDuration(160)
-        anim.setStartValue(0.0)
-        anim.setEndValue(1.0)
-        anim.setEasingCurve(QEasingCurve.OutCubic)
-        anim.start(QAbstractAnimation.DeleteWhenStopped)
-        self._opacity_anim = anim
+        self._hide_timer.stop()
+        self._opacity_anim.stop()
+        self._fading_out = False
+        if not self.isVisible():
+            self.setWindowOpacity(0.0)
+            self.show()
+        self._animate_opacity(1.0, 160, QEasingCurve.OutCubic)
 
     def _fade_out(self, delay_ms: int):
-        def start():
-            anim = QPropertyAnimation(self, b"windowOpacity", self)
-            anim.setDuration(220)
-            anim.setStartValue(self.windowOpacity())
-            anim.setEndValue(0.0)
-            anim.setEasingCurve(QEasingCurve.InCubic)
-            anim.finished.connect(self.hide)
-            anim.start(QAbstractAnimation.DeleteWhenStopped)
-            self._opacity_anim = anim
-        QTimer.singleShot(delay_ms, start)
+        self._hide_timer.start(delay_ms)
+
+    def _start_fade_out(self):
+        self._fading_out = True
+        self._animate_opacity(0.0, 220, QEasingCurve.InCubic)
+
+    def _animate_opacity(self, end: float, ms: int, curve):
+        anim = self._opacity_anim
+        anim.stop()
+        anim.setDuration(ms)
+        anim.setStartValue(self.windowOpacity())
+        anim.setEndValue(end)
+        anim.setEasingCurve(curve)
+        anim.start()
+
+    def _on_fade_finished(self):
+        if self._fading_out:
+            self._fading_out = False
+            self.hide()
 
     # ─── Reações ─────────────────────────────────────────────────────────
     def _on_recording(self):
         self._wave.set_symbol(None)
-        self._set_accent(config.COLOR_RECORDING)
+        self._enter_active()
         self._wave.set_active(True)
         self._set_text("Ouvindo…")
         self._reposition()
@@ -321,26 +379,24 @@ class Popup(QWidget):
         if not txt:
             return
         self._wave.set_symbol(None)
-        self._set_accent(config.COLOR_ACCENT)
+        self._enter_active()
         self._wave.set_active(True)
         self._set_text(txt)
 
     def _on_working(self):
         self._wave.set_symbol(None)
-        self._set_accent(config.COLOR_WORKING)
+        self._enter_active()
         self._wave.set_active(True)
-        self._set_text("Finalizando…")
 
     def _on_done(self, text: str):
-        self._set_accent(config.COLOR_DONE)
+        self._set_static_accent(config.COLOR_DONE)
         self._wave.set_active(False)
-        self._wave.set_symbol("check")
         preview = text.strip() or "(sem fala)"
         self._set_text(preview)
         self._fade_out(config.UI_FADE_OUT_MS)
 
     def _on_error(self, msg: str):
-        self._set_accent(config.COLOR_RECORDING)
+        self._set_static_accent(config.COLOR_ERROR)
         self._wave.set_active(False)
         self._wave.set_symbol("warning")
         self._set_text(msg)

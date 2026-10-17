@@ -54,8 +54,11 @@ WHISPER_COMPUTE_TYPE = "int8"
 # ─── Áudio ────────────────────────────────────────────────────────────────
 SAMPLE_RATE = 16000          # Whisper espera 16kHz
 CHANNELS = 1                 # mono
-INPUT_DEVICE = 1            # índice do mic do headset (entrada física, API MME).
-                             #   None = mic padrão do Windows
+# Mic escolhido pelo NOME (trecho, sem diferenciar maiúsculas) — sobrevive a
+# plugar/remover dispositivos, que embaralha os índices. "" = desliga a busca.
+INPUT_DEVICE_NAME = "CORSAIR"    # headset Corsair HS80
+INPUT_DEVICE = None          # fallback se o nome não for achado (índice ou
+                             #   None = mic padrão do Windows)
                              #   liste opções com: python testar_mic.py
 
 # ─── Atalho global ────────────────────────────────────────────────────────
@@ -73,10 +76,11 @@ UI_HEIGHT = 90
 UI_MARGIN_BOTTOM = 80        # distância do rodapé da tela (px)
 UI_FADE_OUT_MS = 1200        # quanto tempo o "✅ Pronto" fica antes de sumir
 
-# Paleta dark minimalista
-COLOR_BG = "#1a1b26"
-COLOR_TEXT = "#c0caf5"
-COLOR_RECORDING = "#f7768e"  # vermelho/rosa
-COLOR_WORKING = "#e0af68"    # âmbar
-COLOR_DONE = "#9ece6a"       # verde
-COLOR_ACCENT = "#7aa2f7"     # azul
+# Paleta dark cyberpunk (neutra, sem tom roxo) — ciano/teal com alerta em magenta.
+COLOR_BG = "#0a0f0f"
+COLOR_TEXT = "#d4fbf6"
+COLOR_RECORDING = "#00e5ff"  # ciano vivo
+COLOR_WORKING = "#00c2b8"    # teal
+COLOR_DONE = "#00ffc2"       # teal-menta
+COLOR_ACCENT = "#1de9d1"     # teal claro (texto ao vivo)
+COLOR_ERROR = "#ff2e63"      # magenta/vermelho de alerta

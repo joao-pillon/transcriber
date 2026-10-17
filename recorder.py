@@ -4,6 +4,7 @@ import numpy as np
 import sounddevice as sd
 
 import config
+from mic import resolve_input_device
 
 
 class Recorder:
@@ -23,7 +24,7 @@ class Recorder:
             samplerate=config.SAMPLE_RATE,
             channels=config.CHANNELS,
             dtype="float32",
-            device=config.INPUT_DEVICE,
+            device=resolve_input_device(),
             callback=self._callback,
         )
         self._stream.start()
