@@ -23,6 +23,13 @@ OPENAI_REALTIME_MODEL = "gpt-4o-transcribe"  # usado no streaming ao vivo
 # Se False, usa o modo arquivo (grava tudo, depois transcreve).
 USE_STREAMING = True
 
+# Limites de espera: falhas retornam ao estado pronto, sem bloquear a interface.
+STREAM_CONNECT_TIMEOUT = 8.0
+STREAM_IO_TIMEOUT = 2.0
+STREAM_FINAL_TIMEOUT = 12.0
+STREAM_MAX_SECONDS = 55 * 60  # finaliza antes do limite de 60 minutos do servidor
+FILE_API_TIMEOUT = 30.0
+
 # ─── Cache do modelo LOCAL ────────────────────────────────────────────────
 # (só usado quando TRANSCRIBE_MODE == "local")
 # O C: está cheio, então guardamos o modelo Whisper aqui no F:.
@@ -66,21 +73,31 @@ INPUT_DEVICE = None          # fallback se o nome não for achado (índice ou
 # Exemplos: "<ctrl>+b", "<ctrl>+<alt>+d", "<f9>"
 HOTKEY = "<f9>"
 
+# Abre/fecha o histórico de transcrições sem tirar o foco da janela. "" = desliga.
+HISTORY_HOTKEY = "<ctrl>+<f9>"
+
+# ─── Histórico ────────────────────────────────────────────────────────────
+# Cada ciclo de F9 vira uma transcrição salva localmente (só o texto, sem áudio).
+HISTORY_PATH = os.path.join(os.path.dirname(__file__), "data", "history.db")
+HISTORY_LIMIT = 500          # mantém as N mais recentes
+UI_HISTORY_ROWS = 4          # linhas visíveis no painel sem rolar
+
 # ─── Comportamento de saída ───────────────────────────────────────────────
 # Se True, cola o texto na janela ativa (simula Ctrl+V). Se False, só copia.
 AUTO_PASTE = True
 
 # ─── UI ───────────────────────────────────────────────────────────────────
-UI_WIDTH = 320
-UI_HEIGHT = 90
+UI_WIDTH = 500
+UI_HEIGHT = 126
 UI_MARGIN_BOTTOM = 80        # distância do rodapé da tela (px)
 UI_FADE_OUT_MS = 0           # ms que o texto final fica na tela (0 = some na hora)
 
-# Paleta dark cyberpunk (neutra, sem tom roxo) — ciano/teal com alerta em magenta.
-COLOR_BG = "#0a0f0f"
-COLOR_TEXT = "#d4fbf6"
-COLOR_RECORDING = "#00e5ff"  # ciano vivo
-COLOR_WORKING = "#00c2b8"    # teal
-COLOR_DONE = "#00ffc2"       # teal-menta
-COLOR_ACCENT = "#1de9d1"     # teal claro (texto ao vivo)
-COLOR_ERROR = "#ff2e63"      # magenta/vermelho de alerta
+# Grafite + menta; azul na conexão, âmbar no processamento e coral nos erros.
+COLOR_BG = "#101817"
+COLOR_TEXT = "#e4efe9"
+COLOR_CONNECTING = "#a2c4f2"
+COLOR_RECORDING = "#75e3bf"
+COLOR_WORKING = "#e6c98c"
+COLOR_DONE = "#91ebc4"
+COLOR_ACCENT = "#75e3bf"
+COLOR_ERROR = "#f396a3"

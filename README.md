@@ -36,10 +36,58 @@ python main.py
 
 `Ctrl+C` no terminal para sair.
 
+O painel mostra o tempo do ditado e uma animação que acompanha o volume da voz.
+Arraste a faixa superior para posicionar o painel; a posição é mantida durante
+a execução. As animações são suspensas enquanto o painel está oculto.
+
+## Histórico
+
+Cada ciclo de F9 vira uma transcrição salva em `data/history.db` (só o texto,
+sem áudio; fica fora do git). Cada trecho é salvo assim que chega, antes de
+colar: se a colagem ou a conexão falhar, o texto continua lá, marcado como
+"incompleta".
+
+`Ctrl+F9` (ou a setinha no canto do painel) abre o histórico abaixo do cartão.
+Em cada transcrição: **copiar** ou **inserir** direto na janela onde você está
+escrevendo (o painel nunca rouba o foco). Mantém as 500 mais recentes.
+O atalho e o limite ficam em `HISTORY_HOTKEY` e `HISTORY_LIMIT` no `config.py`.
+
 Pra iniciar com o Windows, crie uma Scheduled Task "ao fazer logon" que rode
 `pythonw.exe main.py` (pasta de trabalho = a do projeto). Evite a pasta Startup:
 ela fica atrás da fila lenta de apps do Run e pode demorar minutos. Isso é por
-máquina, não vem pelo git. Sob `pythonw` os erros vão para `.tmp/transcriber.log`.
+máquina, não vem pelo git. Os logs ficam em `.tmp/transcriber.log`, tanto com
+`python` quanto com `pythonw`.
+
+## Diagnóstico de erros e travamentos
+
+- `.tmp/transcriber.log`: horários, identificador de cada ditado, conexão,
+  duração, falhas de microfone, rede e colagem, com traceback. O arquivo gira
+  a cada 2 MB e mantém três cópias anteriores.
+- `.tmp/faults.log`: pilhas de execução em falhas nativas e quando a interface
+  passa mais de 8 segundos sem responder.
+- `.tmp/last-run.json`: indica se a execução anterior encerrou normalmente.
+  Um encerramento forçado é avisado no próximo início.
+
+Os logs de diagnóstico não salvam áudio, chave da API ou texto ditado.
+
+F9 inicia a captura enquanto a conexão é preparada. F9 novamente mostra
+“Finalizando…” e espera os trechos finais antes de fechar a conexão. Durante
+essa finalização, novos toques são ignorados para evitar ditados sobrepostos.
+Se a rede ou o microfone falhar, aparece um aviso e F9 permite tentar novamente.
+Uma gravação contínua finaliza aos 55 minutos, antes do limite do servidor.
+
+Para acompanhar os erros:
+
+```powershell
+Get-Content .tmp/transcriber.log -Tail 80 -Wait
+```
+
+Para rodar os testes de falhas, ordenação de trechos, limpeza do microfone
+e resposta da interface (sem chamadas à API nem colagem real):
+
+```powershell
+python -m unittest discover -s tests -v
+```
 
 ## Ajustes (config.py)
 

@@ -8,6 +8,7 @@ do Windows usam e não sofre esse bloqueio.
 """
 
 import ctypes
+import logging
 import time
 from ctypes import wintypes
 
@@ -52,37 +53,45 @@ def _parse_hotkey(spec: str):
 class _NativeFilter(QAbstractNativeEventFilter):
     """Escuta as mensagens nativas do Windows e detecta o WM_HOTKEY."""
 
-    def __init__(self, hotkey_id: int, callback):
+    def __init__(self, callbacks):
         super().__init__()
-        self._id = hotkey_id
-        self._callback = callback
+        self._callbacks = callbacks  # id do atalho -> callback
 
     def nativeEventFilter(self, eventType, message):
         if eventType == b"windows_generic_MSG":
             msg = wintypes.MSG.from_address(int(message))
-            if msg.message == WM_HOTKEY and msg.wParam == self._id:
-                self._callback()
+            if msg.message == WM_HOTKEY and msg.wParam in self._callbacks:
+                self._callbacks[msg.wParam]()
         return False, 0
 
 
 class HotkeyListener:
-    """Registra config.HOTKEY globalmente e dispara `on_toggle` a cada acionamento."""
+    """Registra config.HOTKEY globalmente e dispara `on_toggle` a cada acionamento.
+    `on_history` (opcional) fica em config.HISTORY_HOTKEY."""
 
     _HOTKEY_ID = 1
+    _HISTORY_ID = 2
     _MIN_INTERVAL = 0.35  # ignora acionamentos repetidos vindos muito rápido (bounce)
 
-    def __init__(self, on_toggle):
+    def __init__(self, on_toggle, on_history=None):
         self._on_toggle = on_toggle
+        self._on_history = on_history
         self._hwnd = None
         self._filter = None
-        self._last_trigger = 0.0
+        self._registered = []
+        self._last_trigger = {}
 
-    def _debounced_toggle(self):
-        now = time.monotonic()
-        if now - self._last_trigger < self._MIN_INTERVAL:
-            return
-        self._last_trigger = now
-        self._on_toggle()
+    def _debounced(self, hotkey_id, callback):
+        def run():
+            now = time.monotonic()
+            if now - self._last_trigger.get(hotkey_id, 0.0) < self._MIN_INTERVAL:
+                return
+            self._last_trigger[hotkey_id] = now
+            try:
+                callback()
+            except Exception:
+                logging.getLogger(__name__).exception("Falha ao processar atalho")
+        return run
 
     def start(self, widget):
         """`widget` é uma QWidget já construída — usamos o HWND nativo dela
@@ -95,10 +104,28 @@ class HotkeyListener:
                 "(outro programa já está usando essa combinação?)"
             )
         self._hwnd = hwnd
-        self._filter = _NativeFilter(self._HOTKEY_ID, self._debounced_toggle)
+        self._registered.append(self._HOTKEY_ID)
+        callbacks = {self._HOTKEY_ID: self._debounced(self._HOTKEY_ID, self._on_toggle)}
+        if self._on_history and config.HISTORY_HOTKEY:
+            # Atalho secundário: se outro app já usa, o ditado continua funcionando.
+            try:
+                mods, vk = _parse_hotkey(config.HISTORY_HOTKEY)
+                if not user32.RegisterHotKey(hwnd, self._HISTORY_ID, mods | MOD_NOREPEAT, vk):
+                    raise OSError("combinação em uso por outro programa")
+                self._registered.append(self._HISTORY_ID)
+                callbacks[self._HISTORY_ID] = self._debounced(self._HISTORY_ID, self._on_history)
+            except (OSError, ValueError) as exc:
+                logging.getLogger(__name__).warning(
+                    "Atalho do histórico %r indisponível: %s", config.HISTORY_HOTKEY, exc)
+        self._filter = _NativeFilter(callbacks)
         QCoreApplication.instance().installNativeEventFilter(self._filter)
 
     def stop(self):
+        if self._filter is not None:
+            QCoreApplication.instance().removeNativeEventFilter(self._filter)
+            self._filter = None
         if self._hwnd is not None:
-            user32.UnregisterHotKey(self._hwnd, self._HOTKEY_ID)
+            for hotkey_id in self._registered:
+                user32.UnregisterHotKey(self._hwnd, hotkey_id)
+            self._registered = []
             self._hwnd = None

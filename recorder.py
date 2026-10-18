@@ -2,6 +2,7 @@
 
 import numpy as np
 import sounddevice as sd
+import logging
 
 import config
 from mic import resolve_input_device
@@ -16,6 +17,8 @@ class Recorder:
 
     def _callback(self, indata, frames, time, status):
         # Chamado pela sounddevice em outra thread a cada bloco de áudio.
+        if status:
+            logging.getLogger(__name__).warning("Captura: %s", status)
         self._frames.append(indata.copy())
 
     def start(self):
@@ -27,14 +30,21 @@ class Recorder:
             device=resolve_input_device(),
             callback=self._callback,
         )
-        self._stream.start()
+        try:
+            self._stream.start()
+        except Exception:
+            self._stream.close()
+            self._stream = None
+            raise
 
     def stop(self) -> np.ndarray:
         """Para a gravação e devolve o áudio capturado (mono, 16kHz, float32)."""
         if self._stream is not None:
-            self._stream.stop()
-            self._stream.close()
-            self._stream = None
+            stream, self._stream = self._stream, None
+            try:
+                stream.stop()
+            finally:
+                stream.close()
 
         if not self._frames:
             return np.zeros(0, dtype=np.float32)

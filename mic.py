@@ -10,6 +10,7 @@ abriu nunca aparece.
 """
 
 import sounddevice as sd
+import logging
 
 import config
 
@@ -22,7 +23,7 @@ def _refresh_devices():
     try:
         sd._terminate()
     except Exception as e:
-        print(f"[mic] não consegui atualizar a lista de dispositivos: {e}")
+        logging.getLogger(__name__).warning("Não foi possível atualizar dispositivos: %s", e)
         return
     sd._initialize()
 
@@ -42,7 +43,7 @@ def resolve_input_device():
                if sd.query_hostapis(devices[i]["hostapi"])["name"] == "MME"]
         if mme or matches:
             return (mme or matches)[0]
-        print(f"[mic] '{config.INPUT_DEVICE_NAME}' não encontrado — usando fallback.")
+        logging.getLogger(__name__).warning("Mic %r não encontrado; usando fallback", config.INPUT_DEVICE_NAME)
     return config.INPUT_DEVICE
 
 

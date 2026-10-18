@@ -38,7 +38,8 @@ class _OpenAITranscriber:
             raise RuntimeError(
                 "OPENAI_API_KEY não encontrada. Coloque-a no arquivo .env."
             )
-        self.client = OpenAI(api_key=config.OPENAI_API_KEY)
+        self.client = OpenAI(api_key=config.OPENAI_API_KEY,
+                             timeout=config.FILE_API_TIMEOUT, max_retries=0)
 
     def transcribe(self, audio: np.ndarray) -> str:
         if audio.size == 0:
